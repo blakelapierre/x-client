@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
+import { XClient, loadLastSeen, saveLastSeen, XUser, XTweet } from './x-api';
 
 dotenv.config();
 
@@ -12,11 +13,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Mock data: accounts and posts. In real version, fetch from X API v2 using bearer token or user OAuth.
 interface Post {
   id: string;
   text: string;
-  createdAt: string; // ISO
+  createdAt: string;
   likes: number;
   retweets: number;
 }
@@ -29,6 +29,7 @@ interface Account {
   posts: Post[];
 }
 
+// Mock fallback
 const mockAccounts: Account[] = [
   {
     id: '1',
@@ -56,7 +57,7 @@ const mockAccounts: Account[] = [
     displayName: 'Andrej Karpathy',
     avatar: 'https://pbs.twimg.com/profile_images/1296667294148382721/9Pr6XrPB_400x400.jpg',
     posts: [
-      { id: 'p5', text: 'The hottest new programming language is English.', createdAt: new Date(Date.now() - 1800000).toISOString(), likes: 78000, retweets: 15000 }, // newest
+      { id: 'p5', text: 'The hottest new programming language is English.', createdAt: new Date(Date.now() - 1800000).toISOString(), likes: 78000, retweets: 15000 },
       { id: 'p6', text: 'Software 2.0 is eating the world.', createdAt: new Date(Date.now() - 43200000).toISOString(), likes: 56000, retweets: 9000 }
     ]
   },
@@ -71,8 +72,75 @@ const mockAccounts: Account[] = [
   }
 ];
 
-// In-memory last seen timestamps per account (for "new" detection). In real app, persist per user.
-const lastSeen: Record<string, string> = {};
+const xClient = new XClient();
+let accountsCache: Account[] = [...mockAccounts];
+let lastSeen: Record<string, string> = {};
+let mode = 'mock';
+let lastRefresh = 0;
+const REFRESH_INTERVAL = 60_000; // 1 min
+
+function mapTweet(tweet: XTweet): Post {
+  return {
+    id: tweet.id,
+    text: tweet.text,
+    createdAt: tweet.created_at,
+    likes: tweet.public_metrics?.like_count || 0,
+    retweets: tweet.public_metrics?.retweet_count || 0,
+  };
+}
+
+function mapUser(user: XUser, posts: Post[]): Account {
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.name,
+    avatar: user.profile_image_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png',
+    posts,
+  };
+}
+
+async function refreshAccounts(): Promise<void> {
+  if (!xClient.isConfigured()) {
+    accountsCache = [...mockAccounts];
+    mode = 'mock';
+    return;
+  }
+
+  try {
+    mode = 'live';
+    const usernames = (process.env.FOLLOWING_USERNAMES || 'elonmusk,naval,karpathy,paulg').split(',').map(s => s.trim()).filter(Boolean);
+    const myUserId = process.env.MY_USER_ID;
+
+    let users: XUser[] = [];
+    if (myUserId && process.env.TWITTER_USER_TOKEN) {
+      // Prefer real following list if user token + my id provided
+      users = await xClient.getFollowing(myUserId, 50);
+    } else {
+      // Fallback: resolve listed usernames
+      for (const uname of usernames) {
+        const u = await xClient.getUserByUsername(uname);
+        if (u) users.push(u);
+      }
+    }
+
+    const newAccounts: Account[] = [];
+    for (const user of users.slice(0, 20)) { // limit to avoid rate limits
+      const tweets = await xClient.getRecentTweets(user.id, 5);
+      const posts = tweets.map(mapTweet);
+      newAccounts.push(mapUser(user, posts));
+      // small delay to be nice to rate limits
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    if (newAccounts.length > 0) {
+      accountsCache = newAccounts;
+    }
+    lastRefresh = Date.now();
+    console.log(`Refreshed ${accountsCache.length} accounts from X API`);
+  } catch (e) {
+    console.error('Refresh failed, keeping previous cache:', e);
+  }
+}
 
 function getLatestPostTime(account: Account): string {
   if (account.posts.length === 0) return '1970-01-01T00:00:00Z';
@@ -85,12 +153,23 @@ function hasNewPosts(account: Account): boolean {
   return latest > seen;
 }
 
+// Init persistence and first refresh
+(async () => {
+  lastSeen = await loadLastSeen();
+  await refreshAccounts();
+  // Background refresh
+  setInterval(refreshAccounts, REFRESH_INTERVAL);
+})();
+
 // GET /api/accounts - sorted by latest post, with new flag
-app.get('/api/accounts', (req, res) => {
-  const sorted = [...mockAccounts].sort((a, b) => {
+app.get('/api/accounts', async (req, res) => {
+  if (Date.now() - lastRefresh > REFRESH_INTERVAL) {
+    await refreshAccounts();
+  }
+  const sorted = [...accountsCache].sort((a, b) => {
     const ta = getLatestPostTime(a);
     const tb = getLatestPostTime(b);
-    return tb.localeCompare(ta); // newest first
+    return tb.localeCompare(ta);
   }).map(acc => ({
     id: acc.id,
     username: acc.username,
@@ -104,27 +183,28 @@ app.get('/api/accounts', (req, res) => {
 });
 
 // GET /api/accounts/:id/posts
-app.get('/api/accounts/:id/posts', (req, res) => {
-  const account = mockAccounts.find(a => a.id === req.params.id);
+app.get('/api/accounts/:id/posts', async (req, res) => {
+  const account = accountsCache.find(a => a.id === req.params.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
-  // Mark as seen
   lastSeen[account.id] = getLatestPostTime(account);
+  await saveLastSeen(lastSeen);
   const posts = [...account.posts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json({ account: { id: account.id, username: account.username, displayName: account.displayName, avatar: account.avatar }, posts });
 });
 
-// POST /api/accounts/:id/seen - mark seen without fetching
-app.post('/api/accounts/:id/seen', (req, res) => {
-  const account = mockAccounts.find(a => a.id === req.params.id);
+// POST /api/accounts/:id/seen
+app.post('/api/accounts/:id/seen', async (req, res) => {
+  const account = accountsCache.find(a => a.id === req.params.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
   lastSeen[account.id] = getLatestPostTime(account);
+  await saveLastSeen(lastSeen);
   res.json({ ok: true });
 });
 
-// GET /api/feed - all posts, newest first, with account info
+// GET /api/feed
 app.get('/api/feed', (req, res) => {
   const all: Array<Post & { account: { id: string; username: string; displayName: string; avatar: string } }> = [];
-  mockAccounts.forEach(acc => {
+  accountsCache.forEach(acc => {
     acc.posts.forEach(post => {
       all.push({
         ...post,
@@ -133,13 +213,18 @@ app.get('/api/feed', (req, res) => {
     });
   });
   all.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  res.json(all.slice(0, 50)); // limit
+  res.json(all.slice(0, 50));
 });
 
-// Health
-app.get('/api/health', (req, res) => res.json({ status: 'ok', mode: 'mock' }));
+// Health + force refresh
+app.get('/api/health', (req, res) => res.json({ status: 'ok', mode, accounts: accountsCache.length, lastRefresh: new Date(lastRefresh).toISOString() }));
+app.post('/api/refresh', async (req, res) => {
+  await refreshAccounts();
+  res.json({ ok: true, mode, count: accountsCache.length });
+});
 
 app.listen(PORT, () => {
   console.log(`X Client server running on http://localhost:${PORT}`);
-  console.log('Using mock data. Set up X API credentials for real data.');
+  console.log(`Mode: ${xClient.isConfigured() ? 'live (X API)' : 'mock'}`);
+  console.log('Set TWITTER_BEARER_TOKEN and optionally FOLLOWING_USERNAMES / MY_USER_ID + TWITTER_USER_TOKEN for real data.');
 });

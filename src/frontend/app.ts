@@ -130,10 +130,25 @@ function startPolling(): void {
   pollInterval = window.setInterval(fetchAccounts, 15000); // every 15s for "real-time"
 }
 
+async function updateStatus(): Promise<void> {
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    const el = document.getElementById('status');
+    if (el) {
+      el.textContent = `${data.mode === 'live' ? 'Live X API' : 'Mock'} · ${data.accounts} accounts · poll 15s`;
+    }
+  } catch {
+    // ignore
+  }
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', () => {
+  updateStatus();
   fetchAccounts();
   startPolling();
+  setInterval(updateStatus, 30000);
   // Optional: show all feed button
   document.getElementById('feed-btn')?.addEventListener('click', async () => {
     currentAccountId = null;

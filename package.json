@@ -5,9 +5,10 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
+    "build:frontend": "tsc -p tsconfig.frontend.json",
     "start": "node dist/server.js",
     "dev": "nodemon --exec ts-node src/server.ts",
-    "build:frontend": "tsc -p tsconfig.frontend.json"
+    "go": "npm run build && npm run build:frontend && npm start"
   },
   "keywords": ["x", "twitter", "client"],
   "license": "MIT",

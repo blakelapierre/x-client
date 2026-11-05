@@ -1,0 +1,27 @@
+{
+  "name": "x-client",
+  "version": "0.1.0",
+  "description": "A simple X (Twitter) client that aggregates posts by account, surfacing accounts with new posts at the top. Backend and frontend in TypeScript/Node.",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "nodemon --exec ts-node src/server.ts",
+    "build:frontend": "tsc -p tsconfig.frontend.json"
+  },
+  "keywords": ["x", "twitter", "client"],
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.10",
+    "nodemon": "^3.1.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3"
+  }
+}

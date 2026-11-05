@@ -1,0 +1,158 @@
+:root {
+  --bg: #000000;
+  --panel: #16181c;
+  --border: #2f3336;
+  --text: #e7e9ea;
+  --text-secondary: #71767b;
+  --accent: #1d9bf0;
+  --new: #00ba7c;
+  --hover: #1d1f23;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+header h1 { font-size: 1.4rem; font-weight: 700; }
+.header-actions { display: flex; gap: 12px; align-items: center; }
+.header-actions button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.status { font-size: 0.8rem; color: var(--text-secondary); }
+
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.accounts-panel {
+  width: 360px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 8px 0;
+}
+
+.accounts-panel h2 {
+  padding: 12px 16px;
+  font-size: 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+.accounts-panel h2 small { font-weight: 400; color: var(--text-secondary); font-size: 0.75rem; }
+
+.account-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.account-item:hover { background: var(--hover); }
+.account-item.active { background: #1a1c1e; border-left: 3px solid var(--accent); }
+.account-item.has-new { border-left: 3px solid var(--new); }
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.avatar.small { width: 40px; height: 40px; }
+.avatar.tiny { width: 20px; height: 20px; vertical-align: middle; }
+
+.account-info { flex: 1; min-width: 0; }
+.name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.username { color: var(--text-secondary); font-weight: 400; font-size: 0.9rem; }
+.meta { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+.new-badge {
+  background: var(--new);
+  color: white;
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.posts-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  background: var(--bg);
+}
+
+.welcome, .loading, .error {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.welcome h2 { color: var(--text); margin-bottom: 12px; }
+
+.posts-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 5;
+}
+.back-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.posts-header .name { font-weight: 700; }
+.posts-header .username { color: var(--text-secondary); font-size: 0.9rem; }
+
+.post {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.post-account { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px; }
+.post-time { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 6px; }
+.post-text { font-size: 1.05rem; line-height: 1.4; margin-bottom: 8px; white-space: pre-wrap; }
+.post-stats { font-size: 0.85rem; color: var(--text-secondary); }
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .accounts-panel { width: 100%; border-right: none; }
+  .posts-view { display: none; }
+  .main.show-posts .accounts-panel { display: none; }
+  .main.show-posts .posts-view { display: block; }
+  header h1 { font-size: 1.2rem; }
+  .status { display: none; }
+}

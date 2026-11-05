@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X Client</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <h1>𝕏 Client</h1>
+    <div class="header-actions">
+      <button id="feed-btn">All Feed</button>
+      <span class="status">Mock data · Polling every 15s</span>
+    </div>
+  </header>
+  <div id="main-view" class="main">
+    <aside id="accounts-panel" class="accounts-panel">
+      <h2>Accounts <small>(newest activity first)</small></h2>
+      <div id="accounts-list" class="accounts-list"></div>
+    </aside>
+    <section id="posts-view" class="posts-view">
+      <div class="welcome">
+        <h2>Welcome to X Client</h2>
+        <p>Select an account on the left to see their posts. Accounts with new posts float to the top.</p>
+        <p>This is a first-run prototype using mock data. Real X API integration coming next (requires your API keys).</p>
+      </div>
+    </section>
+  </div>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

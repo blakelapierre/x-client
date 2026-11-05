@@ -107,6 +107,8 @@ export class XClient {
       return null;
     }
   }
+
+  async getFollowing(userId: string, maxResults = 100): Promise<XUser[]> {
     if (!this.userToken) {
       console.warn('User token required for following list');
       return [];

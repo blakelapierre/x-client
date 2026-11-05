@@ -2,12 +2,29 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { XClient, loadLastSeen, saveLastSeen, XUser, XTweet } from './x-api';
+import {
+  generatePKCE,
+  saveState,
+  loadState,
+  clearState,
+  saveTokens,
+  loadTokens,
+  clearTokens,
+  getAuthUrl,
+  exchangeCode,
+  refreshAccessToken,
+  OAuthTokens,
+} from './oauth';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const CLIENT_ID = process.env.TWITTER_CLIENT_ID || '';
+const CLIENT_SECRET = process.env.TWITTER_CLIENT_SECRET || '';
+const REDIRECT_URI = process.env.TWITTER_REDIRECT_URI || `http://localhost:${PORT}/auth/callback`;
 
 app.use(cors());
 app.use(express.json());
@@ -77,7 +94,40 @@ let accountsCache: Account[] = [...mockAccounts];
 let lastSeen: Record<string, string> = {};
 let mode = 'mock';
 let lastRefresh = 0;
-const REFRESH_INTERVAL = 60_000; // 1 min
+let currentUser: { id: string; username: string } | null = null;
+const REFRESH_INTERVAL = 60_000;
+
+async function ensureFreshUserToken(): Promise<string | undefined> {
+  let tokens = await loadTokens();
+  if (!tokens?.access_token) return process.env.TWITTER_USER_TOKEN;
+
+  // Refresh if expiring soon (within 5 min)
+  if (tokens.expires_at && tokens.expires_at < Date.now() + 5 * 60 * 1000 && tokens.refresh_token && CLIENT_ID && CLIENT_SECRET) {
+    try {
+      console.log('Refreshing user access token...');
+      const refreshed = await refreshAccessToken(CLIENT_ID, CLIENT_SECRET, tokens.refresh_token);
+      tokens = { ...tokens, ...refreshed };
+      await saveTokens(tokens);
+    } catch (e) {
+      console.error('Token refresh failed:', e);
+      await clearTokens();
+      return undefined;
+    }
+  }
+  return tokens.access_token;
+}
+
+async function initAuth(): Promise<void> {
+  const token = await ensureFreshUserToken();
+  if (token) {
+    xClient.setUserToken(token);
+    const me = await xClient.getMe();
+    if (me) {
+      currentUser = { id: me.id, username: me.username };
+      console.log(`Logged in as @${me.username} (${me.id})`);
+    }
+  }
+}
 
 function mapTweet(tweet: XTweet): Post {
   return {
@@ -100,6 +150,9 @@ function mapUser(user: XUser, posts: Post[]): Account {
 }
 
 async function refreshAccounts(): Promise<void> {
+  const userToken = await ensureFreshUserToken();
+  if (userToken) xClient.setUserToken(userToken);
+
   if (!xClient.isConfigured()) {
     accountsCache = [...mockAccounts];
     mode = 'mock';
@@ -109,12 +162,12 @@ async function refreshAccounts(): Promise<void> {
   try {
     mode = 'live';
     const usernames = (process.env.FOLLOWING_USERNAMES || 'elonmusk,naval,karpathy,paulg').split(',').map(s => s.trim()).filter(Boolean);
-    const myUserId = process.env.MY_USER_ID;
 
     let users: XUser[] = [];
-    if (myUserId && process.env.TWITTER_USER_TOKEN) {
-      // Prefer real following list if user token + my id provided
-      users = await xClient.getFollowing(myUserId, 50);
+    if (currentUser && xClient.hasUserToken()) {
+      // Prefer real following list when logged in via OAuth
+      users = await xClient.getFollowing(currentUser.id, 50);
+      console.log(`Fetched ${users.length} accounts from following list`);
     } else {
       // Fallback: resolve listed usernames
       for (const uname of usernames) {
@@ -124,11 +177,10 @@ async function refreshAccounts(): Promise<void> {
     }
 
     const newAccounts: Account[] = [];
-    for (const user of users.slice(0, 20)) { // limit to avoid rate limits
+    for (const user of users.slice(0, 20)) {
       const tweets = await xClient.getRecentTweets(user.id, 5);
       const posts = tweets.map(mapTweet);
       newAccounts.push(mapUser(user, posts));
-      // small delay to be nice to rate limits
       await new Promise(r => setTimeout(r, 200));
     }
 
@@ -156,10 +208,70 @@ function hasNewPosts(account: Account): boolean {
 // Init persistence and first refresh
 (async () => {
   lastSeen = await loadLastSeen();
+  await initAuth();
   await refreshAccounts();
-  // Background refresh
   setInterval(refreshAccounts, REFRESH_INTERVAL);
 })();
+
+// --- OAuth routes ---
+app.get('/auth/login', async (req, res) => {
+  if (!CLIENT_ID) {
+    return res.status(500).send('TWITTER_CLIENT_ID not configured');
+  }
+  const { code_verifier, code_challenge } = generatePKCE();
+  const state = crypto.randomBytes(16).toString('hex');
+  await saveState({ code_verifier, state, created: Date.now() });
+  const url = getAuthUrl(CLIENT_ID, REDIRECT_URI, code_challenge, state);
+  res.redirect(url);
+});
+
+app.get('/auth/callback', async (req, res) => {
+  const { code, state } = req.query;
+  if (!code || !state || typeof code !== 'string' || typeof state !== 'string') {
+    return res.status(400).send('Missing code or state');
+  }
+
+  const saved = await loadState();
+  if (!saved || saved.state !== state) {
+    return res.status(400).send('Invalid state');
+  }
+  await clearState();
+
+  if (!CLIENT_ID || !CLIENT_SECRET) {
+    return res.status(500).send('Client credentials not configured');
+  }
+
+  try {
+    const tokens = await exchangeCode(CLIENT_ID, CLIENT_SECRET, code, saved.code_verifier, REDIRECT_URI);
+    await saveTokens(tokens);
+    xClient.setUserToken(tokens.access_token);
+    const me = await xClient.getMe();
+    if (me) {
+      currentUser = { id: me.id, username: me.username };
+      tokens.user_id = me.id;
+      tokens.username = me.username;
+      await saveTokens(tokens);
+    }
+    await refreshAccounts();
+    res.redirect('/');
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).send('OAuth failed: ' + e.message);
+  }
+});
+
+app.get('/auth/logout', async (req, res) => {
+  await clearTokens();
+  xClient.setUserToken(undefined);
+  currentUser = null;
+  mode = xClient.isConfigured() ? 'live' : 'mock';
+  await refreshAccounts();
+  res.redirect('/');
+});
+
+app.get('/api/me', (req, res) => {
+  res.json({ loggedIn: !!currentUser, user: currentUser, mode });
+});
 
 // GET /api/accounts - sorted by latest post, with new flag
 app.get('/api/accounts', async (req, res) => {

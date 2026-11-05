@@ -103,11 +103,34 @@ function startPolling() {
 }
 async function updateStatus() {
     try {
-        const res = await fetch('/api/health');
-        const data = await res.json();
-        const el = document.getElementById('status');
-        if (el) {
-            el.textContent = `${data.mode === 'live' ? 'Live X API' : 'Mock'} · ${data.accounts} accounts · poll 15s`;
+        const [healthRes, meRes] = await Promise.all([
+            fetch('/api/health'),
+            fetch('/api/me'),
+        ]);
+        const health = await healthRes.json();
+        const me = await meRes.json();
+        const statusEl = document.getElementById('status');
+        if (statusEl) {
+            statusEl.textContent = `${health.mode === 'live' ? 'Live' : 'Mock'} · ${health.accounts || 0} accounts`;
+        }
+        const userInfo = document.getElementById('user-info');
+        const loginBtn = document.getElementById('login-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        if (me.loggedIn && me.user) {
+            if (userInfo)
+                userInfo.textContent = `@${me.user.username}`;
+            if (loginBtn)
+                loginBtn.style.display = 'none';
+            if (logoutBtn)
+                logoutBtn.style.display = 'inline-block';
+        }
+        else {
+            if (userInfo)
+                userInfo.textContent = '';
+            if (loginBtn)
+                loginBtn.style.display = 'inline-block';
+            if (logoutBtn)
+                logoutBtn.style.display = 'none';
         }
     }
     catch {
@@ -120,6 +143,12 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchAccounts();
     startPolling();
     setInterval(updateStatus, 30000);
+    document.getElementById('login-btn')?.addEventListener('click', () => {
+        window.location.href = '/auth/login';
+    });
+    document.getElementById('logout-btn')?.addEventListener('click', () => {
+        window.location.href = '/auth/logout';
+    });
     // Optional: show all feed button
     document.getElementById('feed-btn')?.addEventListener('click', async () => {
         currentAccountId = null;

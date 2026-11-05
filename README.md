@@ -11,16 +11,20 @@ A simple, responsive web client for X (formerly Twitter).
 - Near real-time via background refresh + client polling.
 - Responsive UI: side-by-side on desktop, stacked/mobile-friendly on phone.
 - Built with TypeScript + Node.js (Express backend, vanilla TS frontend compiled to JS).
-- Persists last-seen state to disk.
-- Live X API v2 support when credentials are provided (falls back to mock).
+- OAuth 2.0 login to pull your real following list (with token refresh).
+- Persists last-seen state and OAuth tokens to disk.
 
-## One-line start
+## OAuth Login (recommended)
 
-```bash
-npm run go
-```
+1. In the [X Developer Console](https://console.x.com), open your app.
+2. Enable **OAuth 2.0** (User authentication settings).
+3. Set App type to **Web App** or **Automated App**.
+4. Add callback URL: `http://localhost:3000/auth/callback` (or your production URL).
+5. Required scopes: `tweet.read`, `users.read`, `follows.read`, `offline.access`.
+6. Copy **Client ID** and **Client Secret** into `.env`.
+7. Restart the server, then click **Login with X** in the UI.
 
-This builds the backend + frontend and starts the server. Open http://localhost:3000
+Once logged in, the app pulls your real following list and keeps the token refreshed.
 
 ## Setup
 
@@ -30,9 +34,10 @@ This builds the backend + frontend and starts the server. Open http://localhost:
 
 ### Environment variables
 
-- `TWITTER_BEARER_TOKEN` – App-only bearer token (from developer.x.com)
-- `TWITTER_USER_TOKEN` + `MY_USER_ID` – Optional user-context token to pull your real following list
-- `FOLLOWING_USERNAMES` – Comma-separated usernames to track when no user token (default: elonmusk,naval,karpathy,paulg)
+- `TWITTER_CLIENT_ID` + `TWITTER_CLIENT_SECRET` – for OAuth 2.0 login (recommended)
+- `TWITTER_REDIRECT_URI` – must match the callback registered in the console (default: http://localhost:3000/auth/callback)
+- `TWITTER_BEARER_TOKEN` – optional app-only fallback
+- `FOLLOWING_USERNAMES` – used when not logged in
 - `PORT` – Server port (default 3000)
 
 Rate limits are handled with light delays and caching (refresh every 60s).

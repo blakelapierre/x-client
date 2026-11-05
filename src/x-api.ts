@@ -25,15 +25,23 @@ export interface XTweet {
 
 export class XClient {
   private bearerToken: string | undefined;
-  private userToken: string | undefined; // for user context if available
+  private userToken: string | undefined;
 
   constructor() {
     this.bearerToken = process.env.TWITTER_BEARER_TOKEN;
-    this.userToken = process.env.TWITTER_USER_TOKEN; // optional OAuth 2.0 user access token
+    this.userToken = process.env.TWITTER_USER_TOKEN;
+  }
+
+  setUserToken(token: string | undefined) {
+    this.userToken = token;
   }
 
   isConfigured(): boolean {
     return !!(this.bearerToken || this.userToken);
+  }
+
+  hasUserToken(): boolean {
+    return !!this.userToken;
   }
 
   private async request(endpoint: string, params: Record<string, string> = {}, useUserToken = false): Promise<any> {
@@ -87,8 +95,18 @@ export class XClient {
     }
   }
 
-  // For user context: get following (requires follows.read)
-  async getFollowing(userId: string, maxResults = 100): Promise<XUser[]> {
+  async getMe(): Promise<XUser | null> {
+    if (!this.userToken) return null;
+    try {
+      const data = await this.request('/users/me', {
+        'user.fields': 'profile_image_url,name,username',
+      }, true);
+      return data.data || null;
+    } catch (e) {
+      console.error('Failed to get me:', e);
+      return null;
+    }
+  }
     if (!this.userToken) {
       console.warn('User token required for following list');
       return [];
